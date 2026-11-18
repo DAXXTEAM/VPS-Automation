@@ -1,20 +1,40 @@
-FROM ubuntu:latest
-RUN apt update -y > /dev/null 2>&1 && apt upgrade -y > /dev/null 2>&1 && apt install locales -y \
-&& localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
-ENV LANG en_US.utf8
-ARG NGROK_TOKEN
-ENV NGROK_TOKEN=${NGROK_TOKEN}
-RUN apt install ssh wget unzip -y > /dev/null 2>&1
-RUN wget -O ngrok.zip https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip > /dev/null 2>&1
-RUN unzip ngrok.zip
-RUN echo "./ngrok config add-authtoken ${NGROK_TOKEN} &&" >>/daxx.sh
-RUN echo "./ngrok tcp 22 &>/dev/null &" >>/daxx.sh
-RUN mkdir /run/sshd
-RUN echo '/usr/sbin/sshd -D' >>/daxx.sh
-RUN echo 'PermitRootLogin yes' >>  /etc/ssh/sshd_config 
-RUN echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
-RUN echo root:daxx|chpasswd
-RUN service ssh start
-RUN chmod 755 /daxx.sh
-EXPOSE 80 8888 8080 443 5130 5131 5132 5133 5134 5135 3306
-CMD  /daxx.sh
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=en_US.UTF-8
+
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    ca-certificates \
+    curl \
+    unzip \
+    locales \
+    && locale-gen en_US.UTF-8 \
+    && useradd -m -s /bin/bash railway \
+    && mkdir -p /run/sshd /home/railway/.ssh \
+    && chown -R railway:railway /home/railway/.ssh \
+    && chmod 700 /home/railway/.ssh \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL \
+    https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip \
+    -o /tmp/ngrok.zip \
+    && unzip /tmp/ngrok.zip -d /usr/local/bin \
+    && chmod +x /usr/local/bin/ngrok \
+    && rm /tmp/ngrok.zip
+
+RUN printf '%s\n' \
+    'Port 22' \
+    'PermitRootLogin no' \
+    'PasswordAuthentication no' \
+    'PubkeyAuthentication yes' \
+    'AllowUsers railway' \
+    > /etc/ssh/sshd_config
+
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+EXPOSE 22
+
+CMD ["/start.sh"]
