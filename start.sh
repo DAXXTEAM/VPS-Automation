@@ -1,58 +1,47 @@
-
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
-echo "================================"
-echo "Starting Railway SSH VPS"
-echo "================================"
+printf '%s\n' '================================' 'Starting Railway SSH VPS' '================================'
 
-# Check required environment variables
-if [ -z "$NGROK_TOKEN" ]; then
-    echo "ERROR: NGROK_TOKEN is missing"
+# This entrypoint must run as root so it can set the account password
+# and start the OpenSSH daemon.
+if [[ "$(id -u)" -ne 0 ]]; then
+    echo "ERROR: start.sh must run as root. Remove any USER railway directive from the Dockerfile."
     exit 1
 fi
 
-if [ -z "$SSH_PASSWORD" ]; then
-    echo "ERROR: SSH_PASSWORD is missing"
-    exit 1
-fi
+: "${NGROK_TOKEN:?ERROR: NGROK_TOKEN is missing}"
+: "${SSH_PASSWORD:?ERROR: SSH_PASSWORD is missing}"
 
-# Set railway user password
+# Set the SSH password for the railway account.
 printf 'railway:%s\n' "$SSH_PASSWORD" | chpasswd
 
-# Optional SSH public key authentication
-if [ -n "$SSH_PUBLIC_KEY" ]; then
-    mkdir -p /home/railway/.ssh
-
-    printf '%s\n' "$SSH_PUBLIC_KEY" \
-        > /home/railway/.ssh/authorized_keys
-
-    chown -R railway:railway /home/railway/.ssh
-    chmod 700 /home/railway/.ssh
-    chmod 600 /home/railway/.ssh/authorized_keys
-
+# Optional SSH public-key authentication.
+if [[ -n "${SSH_PUBLIC_KEY:-}" ]]; then
+    install -d -o railway -g railway -m 0700 /home/railway/.ssh
+    printf '%s\n' "$SSH_PUBLIC_KEY" > /home/railway/.ssh/authorized_keys
+    chown railway:railway /home/railway/.ssh/authorized_keys
+    chmod 0600 /home/railway/.ssh/authorized_keys
     echo "SSH public key authentication enabled."
 fi
 
-# Generate SSH host keys
-ssh-keygen -A
+# Confirm sudo access is configured for the SSH user.
+if ! visudo -c >/dev/null; then
+    echo "ERROR: sudoers configuration is invalid."
+    exit 1
+fi
 
-# Validate SSH configuration
+ssh-keygen -A
 /usr/sbin/sshd -t
 
-# Configure ngrok authentication
 ngrok config add-authtoken "$NGROK_TOKEN"
-
-# Start SSH server
 /usr/sbin/sshd
 
-echo "================================"
-echo "SSH server started successfully"
-echo "Username: railway"
-echo "Password authentication enabled"
-echo "================================"
-
-# Start ngrok TCP tunnel
-echo "Starting ngrok TCP tunnel..."
+printf '%s\n' \
+    '================================' \
+    'SSH server started successfully' \
+    'Username: railway' \
+    'Password authentication enabled' \
+    '================================'
 
 exec ngrok tcp 22 --log=stdout
