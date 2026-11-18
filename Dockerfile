@@ -30,11 +30,14 @@ RUN printf '%s\n' \
     'PasswordAuthentication no' \
     'PubkeyAuthentication yes' \
     'AllowUsers railway' \
+    'AuthorizedKeysFile .ssh/authorized_keys' \
     > /etc/ssh/sshd_config
 
 COPY start.sh /start.sh
-RUN chmod +x /start.sh
+
+RUN sed -i 's/\r$//' /start.sh \
+    && chmod 755 /start.sh
 
 EXPOSE 22
 
-CMD ["/start.sh"]
+CMD ["/bin/bash", "/start.sh"]
